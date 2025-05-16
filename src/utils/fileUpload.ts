@@ -16,36 +16,53 @@ export interface EmployeeImport {
 /**
  * Validate and transform imported data to Employee format
  */
-const validateAndTransformData = (data: EmployeeImport[]): Employee[] => {
+const validateAndTransformData = (data: any[]): Employee[] => {
   // Validate required fields
   const validEmployees: Employee[] = [];
   let id = 1000; // Start ID from 1000 to avoid conflicts with existing employee IDs
   
+  // Debug info
+  console.log("Raw imported data:", data);
+  
   data.forEach((item, index) => {
     try {
-      if (!item.name || !item.role || !item.location) {
-        console.warn(`Row ${index + 1}: Missing required fields (name, role, or location)`);
+      // Normalize keys to lowercase for case-insensitive matching
+      const normalizedItem: Record<string, any> = {};
+      Object.keys(item).forEach(key => {
+        normalizedItem[key.toLowerCase().trim()] = item[key];
+      });
+      
+      // Check for required fields with case-insensitive keys
+      const name = normalizedItem.name;
+      const role = normalizedItem.role;
+      const location = normalizedItem.location;
+      const experienceRaw = normalizedItem.experience;
+      const compensationRaw = normalizedItem.compensation;
+      const statusRaw = normalizedItem.status;
+      
+      if (!name || !role || !location) {
+        console.warn(`Row ${index + 1}: Missing required fields:`, { name, role, location });
         return;
       }
       
       // Parse numbers and validate
-      const experience = Number(item.experience);
-      const compensation = Number(item.compensation);
+      const experience = Number(experienceRaw);
+      const compensation = Number(compensationRaw);
       
       if (isNaN(experience) || isNaN(compensation)) {
-        console.warn(`Row ${index + 1}: Invalid number format for experience or compensation`);
+        console.warn(`Row ${index + 1}: Invalid number format:`, { experience: experienceRaw, compensation: compensationRaw });
         return;
       }
       
-      // Normalize status
-      const status = item.status === 'Active' ? 'Active' : 'Inactive';
+      // Normalize status - default to "Active" if not specified or invalid
+      const status = statusRaw?.toString().toLowerCase() === 'inactive' ? 'Inactive' : 'Active';
       
       // Create employee object
       validEmployees.push({
         id: id++,
-        name: item.name,
-        role: item.role,
-        location: item.location,
+        name,
+        role,
+        location,
         experience,
         compensation,
         status: status as 'Active' | 'Inactive'
@@ -55,6 +72,7 @@ const validateAndTransformData = (data: EmployeeImport[]): Employee[] => {
     }
   });
   
+  console.log("Validated employees:", validEmployees);
   return validEmployees;
 };
 
@@ -68,13 +86,20 @@ export const parseCSV = (file: File): Promise<Employee[]> => {
       skipEmptyLines: true,
       complete: (results) => {
         try {
-          const employees = validateAndTransformData(results.data as EmployeeImport[]);
+          console.log("CSV Parse results:", results);
+          if (results.errors && results.errors.length > 0) {
+            console.warn("CSV parsing errors:", results.errors);
+          }
+          
+          const employees = validateAndTransformData(results.data as any[]);
           resolve(employees);
         } catch (error) {
+          console.error("Error processing CSV:", error);
           reject(error);
         }
       },
       error: (error) => {
+        console.error("Papa parse error:", error);
         reject(error);
       }
     });
@@ -94,16 +119,42 @@ export const parseExcel = (file: File): Promise<Employee[]> => {
         const workbook = XLSX.read(data, { type: 'binary' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet) as EmployeeImport[];
         
-        const employees = validateAndTransformData(jsonData);
-        resolve(employees);
+        // Convert Excel sheet to JSON with header row
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: "A" });
+        console.log("Excel raw data:", jsonData);
+        
+        // If first row is headers, process with headers
+        if (jsonData.length > 0) {
+          // Skip header row if present and convert to expected format
+          const headers = jsonData[0];
+          const dataRows = jsonData.slice(1);
+          
+          // Map rows to objects with column headers
+          const formattedData = dataRows.map(row => {
+            const item: Record<string, any> = {};
+            Object.keys(row).forEach(cell => {
+              const headerName = headers[cell]?.toString() || cell;
+              item[headerName.toString().toLowerCase()] = row[cell];
+            });
+            return item;
+          });
+          
+          console.log("Excel formatted data:", formattedData);
+          const employees = validateAndTransformData(formattedData);
+          resolve(employees);
+        } else {
+          console.warn("No data in Excel file");
+          resolve([]);
+        }
       } catch (error) {
+        console.error("Error processing Excel file:", error);
         reject(error);
       }
     };
     
     reader.onerror = (error) => {
+      console.error("FileReader error:", error);
       reject(error);
     };
     
@@ -117,6 +168,7 @@ export const parseExcel = (file: File): Promise<Employee[]> => {
 export const processFile = async (file: File): Promise<Employee[]> => {
   try {
     const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    console.log(`Processing file with extension: ${fileExtension}`);
     
     if (fileExtension === 'csv') {
       return await parseCSV(file);
@@ -126,11 +178,12 @@ export const processFile = async (file: File): Promise<Employee[]> => {
       throw new Error('Unsupported file format. Please upload a CSV or Excel file.');
     }
   } catch (error) {
+    console.error("Error in processFile:", error);
     toast({
       title: "Error processing file",
       description: error instanceof Error ? error.message : "Unknown error occurred",
       variant: "destructive"
     });
-    return [];
+    throw error; // Re-throw to handle in the component
   }
 };
