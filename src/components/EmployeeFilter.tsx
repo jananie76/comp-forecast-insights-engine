@@ -34,14 +34,14 @@ const EmployeeFilter = ({
       <div className="space-y-2">
         <Label htmlFor="role">Filter by Role</Label>
         <Select 
-          value={selectedRole || ''} 
-          onValueChange={(value) => setSelectedRole(value ? value : null)}
+          value={selectedRole || 'all-roles'} 
+          onValueChange={(value) => setSelectedRole(value === 'all-roles' ? null : value)}
         >
           <SelectTrigger>
             <SelectValue placeholder="Select role" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Roles</SelectItem>
+            <SelectItem value="all-roles">All Roles</SelectItem>
             {roles.map(role => (
               <SelectItem key={role} value={role}>{role}</SelectItem>
             ))}
@@ -52,14 +52,14 @@ const EmployeeFilter = ({
       <div className="space-y-2">
         <Label htmlFor="location">Filter by Location</Label>
         <Select 
-          value={selectedLocation || ''} 
-          onValueChange={(value) => setSelectedLocation(value ? value : null)}
+          value={selectedLocation || 'all-locations'} 
+          onValueChange={(value) => setSelectedLocation(value === 'all-locations' ? null : value)}
         >
           <SelectTrigger>
             <SelectValue placeholder="Select location" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Locations</SelectItem>
+            <SelectItem value="all-locations">All Locations</SelectItem>
             {locations.map(location => (
               <SelectItem key={location} value={location}>{location}</SelectItem>
             ))}

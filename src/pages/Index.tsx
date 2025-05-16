@@ -132,14 +132,14 @@ const Index = () => {
                   <div className="space-y-2">
                     <Label htmlFor="group-by">Group By</Label>
                     <Select 
-                      value={groupBy || ''} 
-                      onValueChange={(value) => setGroupBy(value ? value as 'location' | 'role' : null)}
+                      value={groupBy || 'none'} 
+                      onValueChange={(value) => setGroupBy(value === 'none' ? null : value as 'location' | 'role')}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select grouping" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         <SelectItem value="location">Location</SelectItem>
                         <SelectItem value="role">Role</SelectItem>
                       </SelectContent>
