@@ -14,6 +14,105 @@ export interface EmployeeImport {
 }
 
 /**
+ * Find a matching key in the imported data based on expected keys
+ */
+const findMatchingKey = (obj: any, keyToFind: string): string | null => {
+  const normalizedKeyToFind = keyToFind.toLowerCase().trim();
+  
+  // Map of possible alternative names for each field
+  const keyMappings: Record<string, string[]> = {
+    'name': ['name', 'employee name', 'full name', 'employee'],
+    'role': ['role', 'job title', 'position', 'designation', 'title'],
+    'location': ['location', 'office', 'city', 'place', 'work location'],
+    'experience': ['experience', 'years of experience', 'years of experien', 'exp', 'years', 'tenure'],
+    'compensation': ['compensation', 'salary', 'pay', 'income', 'current comp', 'current comp (in)', 'comp'],
+    'status': ['status', 'active?', 'active', 'is active'],
+    'lastWorkingDay': ['last working day', 'end date', 'termination date', 'exit date']
+  };
+  
+  // Check if there's a direct key match
+  const keys = Object.keys(obj);
+  for (const key of keys) {
+    if (key.toLowerCase().trim() === normalizedKeyToFind) {
+      return key;
+    }
+  }
+  
+  // Check for alternative key names
+  const alternatives = keyMappings[normalizedKeyToFind] || [];
+  for (const alt of alternatives) {
+    for (const key of keys) {
+      if (key.toLowerCase().trim() === alt) {
+        return key;
+      }
+    }
+  }
+  
+  return null;
+};
+
+/**
+ * Parse experience value which might be a range (e.g., "1-2")
+ */
+const parseExperienceValue = (value: any): number => {
+  if (value === undefined || value === null) return 0;
+  
+  const stringValue = String(value).trim();
+  
+  // Check if it's a range format like "1-2"
+  if (stringValue.includes('-')) {
+    const [min, max] = stringValue.split('-').map(v => parseFloat(v.trim()));
+    // Take the average of the range
+    if (!isNaN(min) && !isNaN(max)) {
+      return (min + max) / 2;
+    }
+  }
+  
+  // Try to parse as a number
+  const numValue = parseFloat(stringValue);
+  return isNaN(numValue) ? 0 : numValue;
+};
+
+/**
+ * Parse compensation value which might include commas and currency symbols
+ */
+const parseCompensationValue = (value: any): number => {
+  if (value === undefined || value === null) return 0;
+  
+  // Convert to string and remove non-numeric characters except decimals
+  const stringValue = String(value)
+    .replace(/[^\d.]/g, '')  // Remove anything that's not a digit or decimal point
+    .trim();
+    
+  const numValue = parseFloat(stringValue);
+  return isNaN(numValue) ? 0 : numValue;
+};
+
+/**
+ * Parse status value (e.g., "Y"/"N", "Active"/"Inactive")
+ */
+const parseStatusValue = (value: any): 'Active' | 'Inactive' => {
+  if (value === undefined || value === null) return 'Active';
+  
+  const stringValue = String(value).toLowerCase().trim();
+  
+  // Check for various inactive indicators
+  if (
+    stringValue === 'n' || 
+    stringValue === 'no' || 
+    stringValue === 'false' || 
+    stringValue === '0' || 
+    stringValue === 'inactive' ||
+    stringValue === 'terminated'
+  ) {
+    return 'Inactive';
+  }
+  
+  // Default to active
+  return 'Active';
+};
+
+/**
  * Validate and transform imported data to Employee format
  */
 const validateAndTransformData = (data: any[]): Employee[] => {
@@ -26,36 +125,39 @@ const validateAndTransformData = (data: any[]): Employee[] => {
   
   data.forEach((item, index) => {
     try {
-      // Normalize keys to lowercase for case-insensitive matching
-      const normalizedItem: Record<string, any> = {};
-      Object.keys(item).forEach(key => {
-        normalizedItem[key.toLowerCase().trim()] = item[key];
-      });
+      // Find matching keys for required fields
+      const nameKey = findMatchingKey(item, 'name');
+      const roleKey = findMatchingKey(item, 'role');
+      const locationKey = findMatchingKey(item, 'location');
+      const experienceKey = findMatchingKey(item, 'experience');
+      const compensationKey = findMatchingKey(item, 'compensation');
+      const statusKey = findMatchingKey(item, 'status');
       
-      // Check for required fields with case-insensitive keys
-      const name = normalizedItem.name;
-      const role = normalizedItem.role;
-      const location = normalizedItem.location;
-      const experienceRaw = normalizedItem.experience;
-      const compensationRaw = normalizedItem.compensation;
-      const statusRaw = normalizedItem.status;
+      // Extract values using the found keys
+      const name = nameKey ? item[nameKey] : null;
+      const role = roleKey ? item[roleKey] : null;
+      const location = locationKey ? item[locationKey] : null;
       
       if (!name || !role || !location) {
-        console.warn(`Row ${index + 1}: Missing required fields:`, { name, role, location });
+        console.warn(`Row ${index + 1}: Missing required fields:`, { 
+          name: nameKey ? name : 'Not found',
+          role: roleKey ? role : 'Not found',
+          location: locationKey ? location : 'Not found' 
+        });
         return;
       }
       
-      // Parse numbers and validate
-      const experience = Number(experienceRaw);
-      const compensation = Number(compensationRaw);
+      // Parse experience
+      const experienceRaw = experienceKey ? item[experienceKey] : null;
+      const experience = parseExperienceValue(experienceRaw);
       
-      if (isNaN(experience) || isNaN(compensation)) {
-        console.warn(`Row ${index + 1}: Invalid number format:`, { experience: experienceRaw, compensation: compensationRaw });
-        return;
-      }
+      // Parse compensation
+      const compensationRaw = compensationKey ? item[compensationKey] : null;
+      const compensation = parseCompensationValue(compensationRaw);
       
-      // Normalize status - default to "Active" if not specified or invalid
-      const status = statusRaw?.toString().toLowerCase() === 'inactive' ? 'Inactive' : 'Active';
+      // Parse status
+      const statusRaw = statusKey ? item[statusKey] : null;
+      const status = parseStatusValue(statusRaw);
       
       // Create employee object
       validEmployees.push({
@@ -65,7 +167,7 @@ const validateAndTransformData = (data: any[]): Employee[] => {
         location,
         experience,
         compensation,
-        status: status as 'Active' | 'Inactive'
+        status
       });
     } catch (error) {
       console.error(`Error processing row ${index + 1}:`, error);
@@ -121,7 +223,7 @@ export const parseExcel = (file: File): Promise<Employee[]> => {
         const worksheet = workbook.Sheets[sheetName];
         
         // Convert Excel sheet to JSON with header row
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: "A" });
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: "A", raw: false });
         console.log("Excel raw data:", jsonData);
         
         // If first row is headers, process with headers
@@ -135,7 +237,7 @@ export const parseExcel = (file: File): Promise<Employee[]> => {
             const item: Record<string, any> = {};
             Object.keys(row).forEach(cell => {
               const headerName = headers[cell]?.toString() || cell;
-              item[headerName.toString().toLowerCase()] = row[cell];
+              item[headerName.toString()] = row[cell];
             });
             return item;
           });

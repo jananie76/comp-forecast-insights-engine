@@ -5,9 +5,10 @@ import { processFile } from '@/utils/fileUpload';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Upload, FileSpreadsheet, AlertCircle } from 'lucide-react';
+import { Upload, FileSpreadsheet, AlertCircle, Check } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
 
 interface FileUploadProps {
   onDataImport: (employees: Employee[]) => void;
@@ -17,10 +18,14 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataImport }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [success, setSuccess] = useState(false);
 
   const resetState = () => {
     setFileName(null);
     setError(null);
+    setProgress(0);
+    setSuccess(false);
     const fileInput = document.getElementById('file-upload') as HTMLInputElement;
     if (fileInput) {
       fileInput.value = '';
@@ -34,13 +39,20 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataImport }) => {
     setFileName(file.name);
     setIsLoading(true);
     setError(null);
+    setSuccess(false);
+    setProgress(10); // Start progress animation
     
     try {
       console.log("Processing file:", file.name);
+      setProgress(30); // Update progress
+      
       const importedEmployees = await processFile(file);
+      setProgress(80); // Update progress
       
       if (importedEmployees && importedEmployees.length > 0) {
         onDataImport(importedEmployees);
+        setProgress(100);
+        setSuccess(true);
         toast({
           title: "Data imported successfully",
           description: `Loaded ${importedEmployees.length} employees from ${file.name}`
@@ -111,6 +123,20 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataImport }) => {
           <p className="text-sm text-muted-foreground">{fileName}</p>
         )}
         
+        {isLoading && progress > 0 && (
+          <div className="space-y-1">
+            <Progress value={progress} className="h-2" />
+            <p className="text-xs text-muted-foreground">Processing file...</p>
+          </div>
+        )}
+        
+        {success && (
+          <Alert className="bg-green-50 border-green-200 mt-3">
+            <Check className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-600">File imported successfully!</AlertDescription>
+          </Alert>
+        )}
+        
         {error && (
           <Alert variant="destructive" className="mt-3">
             <AlertCircle className="h-4 w-4" />
@@ -118,15 +144,14 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataImport }) => {
           </Alert>
         )}
         
-        <div className="text-xs text-muted-foreground mt-2">
-          <p className="font-medium">Required columns:</p>
+        <div className="text-xs text-muted-foreground mt-2 border-t pt-2">
+          <p className="font-medium">Data Format Information:</p>
           <ul className="list-disc pl-5 space-y-0.5 mt-1">
-            <li>name: Employee full name</li>
-            <li>role: Job title/role</li>
-            <li>location: Office location</li>
-            <li>experience: Years of experience (number)</li>
-            <li>compensation: Annual compensation (number)</li>
-            <li>status: "Active" or "Inactive" (optional)</li>
+            <li>Your file should have headers in the first row</li>
+            <li>Required columns: Name, Role, Location</li>
+            <li>Experience can be numeric or ranges (e.g., "1-2")</li>
+            <li>"Active?" column can use Y/N or any variant</li>
+            <li>Compensation values can include formatting (e.g., commas)</li>
           </ul>
         </div>
       </div>
