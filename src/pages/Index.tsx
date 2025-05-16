@@ -13,6 +13,7 @@ import EmployeeTable from '@/components/EmployeeTable';
 import CompensationChart from '@/components/CompensationChart';
 import ExperienceChart from '@/components/ExperienceChart';
 import CompensationSimulator from '@/components/CompensationSimulator';
+import FileUpload from '@/components/FileUpload';
 import { exportToCSV } from '@/utils/csvExport';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -29,31 +30,106 @@ const Index = () => {
   const [groupBy, setGroupBy] = useState<'location' | 'role' | null>(null);
   
   // Data states
+  const [employeeData, setEmployeeData] = useState<Employee[]>(employees);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
   const [incrementedEmployees, setIncrementedEmployees] = useState<Employee[] | null>(null);
   const [locationCompensationData, setLocationCompensationData] = useState<{ location: string; average: number }[]>([]);
   const [experienceData, setExperienceData] = useState<Record<string, Record<string, number>>>({});
   
+  // Handle data import
+  const handleDataImport = (importedEmployees: Employee[]) => {
+    setEmployeeData(importedEmployees);
+  };
+
   // Update filtered employees based on role and inactive status
   useEffect(() => {
-    const filtered = getEmployeesByRole(selectedRole, includeInactive);
+    // Custom filtering since we might have imported data
+    const filtered = employeeData.filter(employee => 
+      (selectedRole === null || employee.role === selectedRole) && 
+      (includeInactive || employee.status === 'Active')
+    );
     setFilteredEmployees(filtered);
-  }, [selectedRole, includeInactive]);
+  }, [selectedRole, includeInactive, employeeData]);
   
   // Update location compensation data
   useEffect(() => {
     const data = locations.map(location => ({
       location,
-      average: getAverageCompensationByLocation(location, includeInactive)
+      average: calculateAverageCompensation(location)
     }));
     setLocationCompensationData(data);
-  }, [includeInactive]);
+  }, [includeInactive, employeeData]);
+  
+  // Calculate average compensation for a location
+  const calculateAverageCompensation = (location: string) => {
+    const filteredForLocation = employeeData.filter(
+      employee => employee.location === location && (includeInactive || employee.status === 'Active')
+    );
+    
+    if (filteredForLocation.length === 0) return 0;
+    
+    const totalCompensation = filteredForLocation.reduce(
+      (sum, employee) => sum + employee.compensation, 0
+    );
+    
+    return totalCompensation / filteredForLocation.length;
+  };
   
   // Update experience data
   useEffect(() => {
-    const data = groupEmployeesByExperience(groupBy, includeInactive);
+    const data = calculateExperienceGroups(groupBy);
     setExperienceData(data);
-  }, [groupBy, includeInactive]);
+  }, [groupBy, includeInactive, employeeData]);
+  
+  // Calculate experience groups
+  const calculateExperienceGroups = (groupByParam: 'location' | 'role' | null) => {
+    const result: Record<string, Record<string, number>> = {};
+    const experienceRanges = [
+      { label: '0-1 years', min: 0, max: 1 },
+      { label: '1-2 years', min: 1, max: 2 },
+      { label: '2-5 years', min: 2, max: 5 },
+      { label: '5-10 years', min: 5, max: 10 },
+      { label: '10+ years', min: 10, max: Infinity }
+    ];
+    
+    const roles = [...new Set(employeeData.map(emp => emp.role))];
+    const locs = [...new Set(employeeData.map(emp => emp.location))];
+    
+    experienceRanges.forEach(range => {
+      result[range.label] = {};
+      
+      if (groupByParam === 'location') {
+        locs.forEach(location => {
+          result[range.label][location] = employeeData.filter(
+            employee => 
+              employee.experience >= range.min && 
+              employee.experience < range.max &&
+              employee.location === location &&
+              (includeInactive || employee.status === 'Active')
+          ).length;
+        });
+      } else if (groupByParam === 'role') {
+        roles.forEach(role => {
+          result[range.label][role] = employeeData.filter(
+            employee => 
+              employee.experience >= range.min && 
+              employee.experience < range.max &&
+              employee.role === role &&
+              (includeInactive || employee.status === 'Active')
+          ).length;
+        });
+      } else {
+        result[range.label]['count'] = employeeData.filter(
+          employee => 
+            employee.experience >= range.min && 
+            employee.experience < range.max &&
+            (includeInactive || employee.status === 'Active')
+        ).length;
+      }
+    });
+    
+    return result;
+  };
   
   // Handle compensation increment simulation
   const handleApplyIncrement = (newIncrementedEmployees: Employee[]) => {
@@ -90,6 +166,7 @@ const Index = () => {
             <TabsTrigger value="filter">Filter & Display</TabsTrigger>
             <TabsTrigger value="experience">Experience Analysis</TabsTrigger>
             <TabsTrigger value="simulate">Simulate Increments</TabsTrigger>
+            <TabsTrigger value="import">Import Data</TabsTrigger>
           </TabsList>
 
           {/* Filter and Display Tab */}
@@ -202,6 +279,51 @@ const Index = () => {
                 />
               </div>
             )}
+          </TabsContent>
+
+          {/* Import Data Tab */}
+          <TabsContent value="import" className="space-y-6">
+            <div className="grid lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-1">
+                <FileUpload onDataImport={handleDataImport} />
+              </div>
+              <div className="lg:col-span-2">
+                <div className="border rounded-md p-4 bg-card">
+                  <h3 className="text-lg font-medium mb-4">Import Instructions</h3>
+                  <div className="space-y-4">
+                    <p>
+                      Upload a CSV or Excel file with employee data to use in the application.
+                    </p>
+                    <h4 className="font-medium mt-2">Required columns:</h4>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>name: Employee full name</li>
+                      <li>role: Job title/role (e.g., Developer, Manager)</li>
+                      <li>location: Office location</li>
+                      <li>experience: Years of experience (number)</li>
+                      <li>compensation: Annual compensation (number)</li>
+                      <li>status: "Active" or "Inactive"</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-6">
+              <h2 className="text-2xl font-bold mb-4">Current Employee Data</h2>
+              <p className="text-muted-foreground mb-4">
+                {employeeData.length} employees loaded
+                {employeeData !== employees && " from custom data file"}
+              </p>
+              <EmployeeTable 
+                employees={employeeData.slice(0, 10)} 
+                incrementedEmployees={null}
+              />
+              {employeeData.length > 10 && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Showing first 10 employees. Use the Filter tab to view all data.
+                </p>
+              )}
+            </div>
           </TabsContent>
         </Tabs>
       </main>
